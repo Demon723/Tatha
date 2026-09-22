@@ -49,6 +49,17 @@ from tatha_attention import (TemporalAttentionWrapper, AttentionConfig,
                                PositionalEncoding)
 from tatha_web import TathaDashboard
 from tatha_benchmarks import BenchmarkSuite as BSuite
+from meta_director import MetaParameterSpace, MetaDirector, MetaLearningGame
+from tatha_wiring import WiringRegistry, attach_to_runtime
+
+
+# --- Wire all modular components ---
+try:
+    _WIRING = WiringRegistry()
+    _ATTACHED = attach_to_runtime(globals())
+except ImportError:
+    _WIRING = None
+    _ATTACHED = []
 
 # Import core agents
 try:
@@ -973,63 +984,148 @@ class TathaREPL:
 
 
 # ==============================================================================
-# PART R9: Entry point
+# PART R8: CLI Entry Point
 # ==============================================================================
 
-def main():
-    parser = argparse.ArgumentParser(description="Tatha Real-Time Agent Server")
-    parser.add_argument('--repl', action='store_true', help='Interactive REPL mode')
-    parser.add_argument('--host', default='0.0.0.0', help='WebSocket host')
-    parser.add_argument('--port', type=int, default=8765, help='WebSocket port')
-    parser.add_argument('--rest-port', type=int, default=8766, help='REST API port')
-    parser.add_argument('--grid', type=int, default=10, help='Grid size')
-    parser.add_argument('--load', type=str, default=None, help='Checkpoint to load')
-    parser.add_argument('--config', type=str, default=None, help='YAML config file')
-    parser.add_argument('--checkpoint-dir', type=str, default='./checkpoints')
-    parser.add_argument('--gpu', action='store_true', help='Enable GPU backend')
-    parser.add_argument('--attention', action='store_true', help='Enable attention mechanism')
-    parser.add_argument('--curriculum', action='store_true', help='Enable curriculum learning')
-    parser.add_argument('--prioritized', action='store_true', help='Enable prioritized replay')
-    parser.add_argument('--reward-shaping', action='store_true', help='Enable reward shaping')
-    parser.add_argument('--neuro', action='store_true', help='Enable neuroscience metrics')
-    parser.add_argument('--benchmark', action='store_true', help='Run benchmarks')
-    parser.add_argument('--rest', action='store_true', help='Start REST API server')
-    args = parser.parse_args()
+def _wiring_report() -> None:
+    """Print wiring coverage at startup."""
+    if _WIRING is None:
+        print("[wiring] registry not available")
+        return
+    cov = _WIRING.coverage()
+    print(f"[wiring] {len(_ATTACHED)} components attached "
+          f"({cov['percent']:.1f}% coverage)")
+    if cov["missing"] > 0:
+        print(f"[wiring] unavailable: "
+              f"{', '.join(sorted(_WIRING.unavailable().keys()))}")
+
+
+def _repl(agent: "TathaRealTime") -> None:
+    """Interactive REPL for manual observation injection."""
+    print("\nTatha REPL — commands:")
+    print("  obs <comma-separated floats>   inject observation")
+    print("  learn                          run one learning step")
+    print("  reset                          reset episode")
+    print("  diag                           print diagnostics")
+    print("  wiring                         print wiring coverage")
+    print("  quit                           exit\n")
+
+    while True:
+        try:
+            line = input("tatha> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        if not line:
+            continue
+
+        parts = line.split(maxsplit=1)
+        cmd = parts[0].lower()
+
+        if cmd in ("quit", "exit", "q"):
+            break
+
+        elif cmd == "obs":
+            if len(parts) < 2:
+                print("usage: obs 0.1,0.2,0.3,...")
+                continue
+            try:
+                data = [float(x) for x in parts[1].split(",")]
+            except ValueError:
+                print("invalid float list")
+                continue
+            result = agent.observe(data)
+            action = result.get("action", "?")
+            belief = result.get("belief", [])
+            print(f"action={action}  belief_norm="
+                  f"{float(np.linalg.norm(belief)):.4f}")
+
+        elif cmd == "learn":
+            agent.learn_from_replay()
+            print(f"replay_size={len(agent.replay)}")
+
+        elif cmd == "reset":
+            agent.reset()
+            print(f"episode={agent.episode}")
+
+        elif cmd == "diag":
+            diag = agent.get_diagnostics()
+            for k, v in diag.items():
+                print(f"  {k}: {v}")
+
+        elif cmd == "wiring":
+            _wiring_report()
+            if _WIRING is not None:
+                for name in sorted(_WIRING.available()):
+                    print(f"  OK  {name}")
+
+        else:
+            print(f"unknown command: {cmd}")
+
+    print("bye")
+
+
+def main(argv: list | None = None) -> int:
+    """Entry point for the `tatha` console script."""
+    parser = argparse.ArgumentParser(
+        prog="tatha",
+        description="Tatha real-time predictive coding agent",
+    )
+    parser.add_argument("--repl", action="store_true",
+                        help="interactive REPL mode")
+    parser.add_argument("--host", default=None,
+                        help="WebSocket bind address (default 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=None,
+                        help="WebSocket port (default 8765)")
+    parser.add_argument("--config", default=None,
+                        help="path to YAML config file")
+    parser.add_argument("--wiring", action="store_true",
+                        help="print wiring coverage and exit")
+    parser.add_argument("--diagnostics", action="store_true",
+                        help="print agent diagnostics and exit")
+    args = parser.parse_args(argv)
+
+    if args.wiring:
+        _wiring_report()
+        if _WIRING is not None:
+            for name in sorted(_WIRING.available()):
+                print(f"  OK  {name}")
+        return 0
 
     if args.config:
         config = TathaConfig.from_yaml(args.config)
     else:
         config = TathaConfig.from_env()
 
-    config.GRID_SIZE = args.grid
-    config.USE_GPU = args.gpu
-    config.ATTENTION_ENABLED = args.attention
-    config.CURRICULUM = args.curriculum
-    config.PRIORITIZED_REPLAY = args.prioritized
-    config.REWARD_SHAPING = args.reward_shaping
-    config.NEUROSCIENCE_METRICS = args.neuro
-    config.REST_PORT = args.rest_port
+    if args.host is not None:
+        config._vals["WS_HOST"] = args.host
+    if args.port is not None:
+        config._vals["WS_PORT"] = args.port
+
+    _wiring_report()
 
     agent = TathaRealTime(config)
 
-    if args.load:
-        ok = agent.checkpoint_load(args.load)
-        if ok:
-            print(f"Loaded checkpoint: {args.load}")
-        else:
-            print(f"No checkpoint found: {args.load}, starting fresh")
+    if args.diagnostics:
+        diag = agent.get_diagnostics()
+        for k, v in diag.items():
+            print(f"  {k}: {v}")
+        return 0
 
-    if args.benchmark:
-        agent.benchmark.print_report()
-    elif args.rest:
-        agent.rest_server.run()
-    elif args.repl:
-        repl = TathaREPL(agent)
-        repl.run()
-    else:
-        server = TathaWSServer(agent, host=args.host, port=args.port)
+    if args.repl:
+        _repl(agent)
+        return 0
+
+    host = config.WS_HOST
+    port = config.WS_PORT
+    server = TathaWSServer(agent, host=host, port=port)
+    print(f"starting WebSocket server on ws://{host}:{port}")
+    try:
         server.start()
+    except KeyboardInterrupt:
+        print("shutdown requested")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

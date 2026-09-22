@@ -45,6 +45,7 @@ WIRING_MANIFEST: list[ComponentSpec] = [
     ComponentSpec("active_visualization", "active_visualization", None, "module", "viz", ("numpy", "matplotlib"), notes="Plotting helpers"),
     ComponentSpec("CheckpointManager", "checkpoint", "CheckpointManager", "class", "infra", ("numpy",), kwargs_variants=({"root": "/tmp/tatha_ckpt"}, {}), notes="Save/load store"),
     ComponentSpec("validate_observation", "observation_validator", "validate_observation", "function", "infra", ("numpy",), notes="Observation validator"),
+    ComponentSpec("tatha_fixed", "tatha_fixed", None, "module", "core", ("numpy",), notes="Alternative core agent implementation (FIXED)"),
 ]
 
 
@@ -402,7 +403,10 @@ def attach_to_runtime(runtime: Any, registry: Optional[WiringRegistry] = None, s
                 raise RuntimeError(f"failed to instantiate {spec.name}")
             continue
         try:
-            setattr(runtime, attr, obj)
+            if isinstance(runtime, dict):
+                runtime[attr] = obj
+            else:
+                setattr(runtime, attr, obj)
             attached.append(spec.name)
         except Exception:
             if strict:
@@ -420,7 +424,10 @@ def attach_to_runtime(runtime: Any, registry: Optional[WiringRegistry] = None, s
                         pass
                 except Exception:
                     pass
-    setattr(runtime, "_wired_components", attached)
+    if isinstance(runtime, dict):
+        runtime["_wired_components"] = attached
+    else:
+        setattr(runtime, "_wired_components", attached)
     return attached
 
 
