@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import importlib
-import inspect
 import sys
-import traceback
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 import numpy as np
+
+from path_integral import PathIntegralConfig
+from precision_hyper import HyperModelConfig
+from qepso import QEPSOConfig
+from density_swarm import DensitySwarmConfig
 
 
 @dataclass
@@ -24,23 +27,23 @@ class ComponentSpec:
 
 
 WIRING_MANIFEST: list[ComponentSpec] = [
-    ComponentSpec("PathIntegralPlanner", "path_integral", "PathIntegralPlanner", "class", "quantum", ("numpy",), kwargs_variants=({"grid_size": 8, "n_slices": 4}, {"grid_size": 8}, {}), notes="Trotter-Suzuki propagator"),
-    ComponentSpec("PrecisionHyperModel", "precision_hyper", "PrecisionHyperModel", "class", "quantum", ("numpy", "torch"), kwargs_variants=({"state_dim": 16, "n_channels": 4}, {}), notes="Adaptive per-channel precision"),
-    ComponentSpec("QEPSOSwarm", "qepso", "QEPSOSwarm", "class", "quantum", ("numpy",), kwargs_variants=(), notes="Quantum-entangled PSO (needs bounds + objective)"),
-    ComponentSpec("DensityMatrixSwarm", "density_swarm", "DensityMatrixSwarm", "class", "quantum", ("numpy",), kwargs_variants=({"hilbert_dim": 8}, {}), notes="Lindblad evolution"),
-    ComponentSpec("QuantumSwarm", "quantum_swarm", "QuantumSwarm", "class", "swarm", ("numpy",), kwargs_variants=({},), notes="Multi-agent quantum swarm"),
-    ComponentSpec("AdversarialSwarm", "adversarial_swarm", "AdversarialSwarmRealm", "class", "swarm", ("numpy",), kwargs_variants=({},), notes="RED vs BLUE swarm game"),
-    ComponentSpec("GridWorld", "gridworld_pc", "GridWorld", "class", "env", ("numpy",), kwargs_variants=({"size": 4}, {"n": 4}, {}), notes="Grid world"),
-    ComponentSpec("SpaceGridWorld", "gridworld_pc", "SpaceGridWorld", "class", "env", ("numpy",), kwargs_variants=({"size": 4}, {}), notes="Spatial grid world"),
+    ComponentSpec("PathIntegralPlanner", "path_integral", "PathIntegralPlanner", "class", "quantum", ("numpy",), kwargs_variants=({"config": PathIntegralConfig(grid_size=8, n_slices=4)}, {"config": PathIntegralConfig(grid_size=8)}, {"config": PathIntegralConfig()}), notes="Trotter-Suzuki propagator"),
+    ComponentSpec("PrecisionHyperModel", "precision_hyper", "PrecisionHyperModel", "class", "quantum", ("numpy", "torch"), kwargs_variants=({"cfg": HyperModelConfig(state_dim=16, n_channels=4)}, {"cfg": HyperModelConfig()}), notes="Adaptive per-channel precision"),
+    ComponentSpec("QEPSOSwarm", "qepso", "QEPSOSwarm", "class", "quantum", ("numpy",), kwargs_variants=({"config": QEPSOConfig(), "bounds": np.array([[-5.0, 5.0], [-5.0, 5.0]]), "objective": lambda x: 0.0},), notes="Quantum-entangled PSO (needs bounds + objective)"),
+    ComponentSpec("DensityMatrixSwarm", "density_swarm", "DensityMatrixSwarm", "class", "quantum", ("numpy",), kwargs_variants=({"config": DensitySwarmConfig(hilbert_dim=8)}, {"config": DensitySwarmConfig()}), notes="Lindblad evolution"),
+    ComponentSpec("QuantumSwarm", "quantum_swarm", "QuantumSwarm", "class", "swarm", ("numpy",), kwargs_variants=({"n_agents": 4, "grid_size": 8}, {"n_agents": 4, "grid_size": 8, "initial_positions": None, "sigma": 1.5, "entanglement_strength": 0.3}, {}), notes="Multi-agent quantum swarm"),
+    ComponentSpec("AdversarialSwarm", "adversarial_swarm", "AdversarialSwarmRealm", "class", "swarm", ("numpy",), kwargs_variants=({"n_red": 3, "n_blue": 2, "size": 14}, {"n_red": 3, "n_blue": 2}, {}), notes="RED vs BLUE swarm game"),
+    ComponentSpec("GridWorld", "gridworld_pc", "GridWorld", "class", "env", ("numpy",), kwargs_variants=({"size": 5}, {"n": 5}, {}), notes="Grid world"),
+    ComponentSpec("SpaceGridWorld", "gridworld_pc", "SpaceGridWorld", "class", "env", ("numpy",), kwargs_variants=({"size": 20}, {"n_planets": 3, "n_asteroids": 4}, {}), notes="Spatial grid world"),
     ComponentSpec("quantum_realm", "quantum_realm", None, "module", "env", ("numpy",), kwargs_variants=(), notes="Quantum grid world environment (module)"),
     ComponentSpec("GenerativeModel", "active_inference", "GenerativeModel", "class", "ai", ("numpy",), kwargs_variants=(), notes="A/B/C/D/E discrete POMDP"),
     ComponentSpec("run_fpi", "active_inference", "run_fpi", "function", "ai", ("numpy",), notes="Fixed-point variational inference"),
     ComponentSpec("compute_efe", "active_inference", "compute_efe", "function", "ai", ("numpy",), notes="Expected free energy"),
     ComponentSpec("select_action", "active_inference", "select_action", "function", "ai", ("numpy",), notes="EFE policy selection"),
     ComponentSpec("GymWrapper", "active_gym", "GymWrapper", "class", "gym", ("numpy", "gymnasium"), kwargs_variants=(), notes="Gymnasium adapter"),
-    ComponentSpec("Discretizer", "active_gym", "Discretizer", "class", "gym", ("numpy",), kwargs_variants=({"low": np.array([-1.0, -1.0]), "high": np.array([1.0, 1.0])},), notes="Continuous to discrete binning"),
+    ComponentSpec("Discretizer", "active_gym", "Discretizer", "class", "gym", ("numpy",), kwargs_variants=(("low", np.array([-5.0, -5.0, -5.0, -5.0])), ("high", np.array([5.0, 5.0, 5.0, 5.0])),), notes="Continuous to discrete binning"),
     ComponentSpec("active_visualization", "active_visualization", None, "module", "viz", ("numpy", "matplotlib"), notes="Plotting helpers"),
-    ComponentSpec("CheckpointManager", "checkpoint", "CheckpointManager", "class", "infra", ("numpy",), kwargs_variants=({"root": "/tmp/tatha_ckpt"},), notes="Save/load store"),
+    ComponentSpec("CheckpointManager", "checkpoint", "CheckpointManager", "class", "infra", ("numpy",), kwargs_variants=({"root": "/tmp/tatha_ckpt"}, {}), notes="Save/load store"),
     ComponentSpec("validate_observation", "observation_validator", "validate_observation", "function", "infra", ("numpy",), notes="Observation validator"),
 ]
 
@@ -74,6 +77,12 @@ class _Failed:
 def _try_call(fn: Callable, kwargs_variants: tuple, fallback: Any = None) -> Any:
     last_exc: Optional[Exception] = None
     for kwargs in kwargs_variants:
+        if isinstance(kwargs, tuple):
+            try:
+                return fn(*kwargs)
+            except (TypeError, ValueError) as exc:
+                last_exc = exc
+                continue
         try:
             return fn(**kwargs)
         except (TypeError, ValueError) as exc:
@@ -183,13 +192,8 @@ class WiringRegistry:
         return {"total": total, "available": ok, "missing": total - ok, "percent": 100.0 * ok / max(total, 1), "by_category": by_cat}
 
 
-# Backward-compatible aliases
 ComponentRegistry = WiringRegistry
 
-
-# ============================================================================
-# TATHASTACK (backward-compatible with tests)
-# ============================================================================
 
 class TathaStack:
     def __init__(self, registry: Optional[WiringRegistry] = None):
@@ -253,10 +257,6 @@ class TathaStack:
         return {"n_available": len(self.components), "n_total": len(self.reg.manifest), "available": sorted(self.components.keys())}
 
 
-# ============================================================================
-# SMOKE TESTING
-# ============================================================================
-
 def _smoke_instance(name: str, obj: Any) -> tuple:
     try:
         if name == "PathIntegralPlanner":
@@ -318,14 +318,16 @@ def _smoke_instance(name: str, obj: Any) -> tuple:
             return True, f"passed={r.passed}"
         if name == "active_visualization":
             return True, "module imported"
+        if name == "AdversarialSwarm":
+            return True, "class resolved"
+        if name == "QuantumSwarm":
+            return True, "class resolved"
+        if name == "SpaceGridWorld":
+            return True, "class resolved"
         return True, "resolved"
     except Exception as exc:
         return False, f"{type(exc).__name__}: {exc}"
 
-
-# ============================================================================
-# PROBE AND SMOKE
-# ============================================================================
 
 def probe(verbose: bool = True, registry: Optional[WiringRegistry] = None) -> dict:
     reg = registry or WiringRegistry()
@@ -387,10 +389,6 @@ def smoke(verbose: bool = True, registry: Optional[WiringRegistry] = None) -> di
     return results
 
 
-# ============================================================================
-# RUNTIME ATTACHMENT
-# ============================================================================
-
 def attach_to_runtime(runtime: Any, registry: Optional[WiringRegistry] = None, strict: bool = False) -> list:
     reg = registry or WiringRegistry()
     attached = []
@@ -426,13 +424,8 @@ def attach_to_runtime(runtime: Any, registry: Optional[WiringRegistry] = None, s
     return attached
 
 
-# Backward-compatible aliases
 wire = attach_to_runtime
 
-
-# ============================================================================
-# CATEGORY RUNNERS
-# ============================================================================
 
 def run_quantum(grid: int = 8) -> dict:
     reg = WiringRegistry()
@@ -459,7 +452,7 @@ def run_quantum_realm(grid: int = 8) -> dict:
     mod = res.obj
     public = [a for a in dir(mod) if not a.startswith("_")]
     out: dict = {"public_names": public}
-    for cls_name in ("QuantumRealm", "Realm", "QuantumGridWorld"):
+    for cls_name in ("QuantumRealmGridWorld", "QuantumRealm", "Realm", "QuantumGridWorld"):
         cls = getattr(mod, cls_name, None)
         if cls is None or not isinstance(cls, type):
             continue
@@ -510,10 +503,6 @@ def run_infra() -> dict:
         return {"checkpoint_shape": arr.shape}
     return {"skipped": True}
 
-
-# ============================================================================
-# CLI
-# ============================================================================
 
 def cmd_probe(): probe()
 def cmd_smoke(): smoke()
@@ -573,6 +562,7 @@ def cmd_attach():
     print("except ImportError:")
     print("    _WIRING = None")
     print("    _ATTACHED = []")
+
 
 def main(argv: Optional[list] = None) -> int:
     argv = argv or sys.argv
