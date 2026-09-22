@@ -1,0 +1,40 @@
+Metadata-Version: 2.4
+Name: tatha
+Version: 1.0.0
+Summary: Predictive Coding + Quantum Active Inference Agent System
+Requires-Python: >=3.10
+License-File: LICENSE
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: scipy>=1.11.0
+Requires-Dist: matplotlib>=3.7.0
+Requires-Dist: websockets>=12.0
+Requires-Dist: fastapi>=0.104.0
+Requires-Dist: uvicorn[standard]>=0.24.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: torch>=2.0.0
+Requires-Dist: anthropic>=0.30.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: requests>=2.31.0
+Requires-Dist: gymnasium>=0.29.0
+Provides-Extra: gpu
+Requires-Dist: cupy-cuda12x>=12.0.0; extra == "gpu"
+Provides-Extra: web
+Requires-Dist: matplotlib; extra == "web"
+Requires-Dist: aiohttp>=3.9.0; extra == "web"
+Provides-Extra: benchmarks
+Requires-Dist: tqdm>=4.65.0; extra == "benchmarks"
+Requires-Dist: prometheus-client>=0.19.0; extra == "benchmarks"
+Requires-Dist: pymdp; extra == "benchmarks"
+Requires-Dist: jax; extra == "benchmarks"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: anthropic>=0.30.0; extra == "dev"
+Requires-Dist: python-dotenv>=1.0.0; extra == "dev"
+Provides-Extra: quantum
+Requires-Dist: torch>=2.0.0; extra == "quantum"
+Requires-Dist: numpy>=1.24.0; extra == "quantum"
+Provides-Extra: local-llm
+Requires-Dist: ollama>=0.3.0; extra == "local-llm"
+Requires-Dist: llama-cpp-python>=0.2.23; extra == "local-llm"
+Dynamic: license-file

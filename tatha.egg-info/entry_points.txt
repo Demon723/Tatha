@@ -1,0 +1,7 @@
+[console_scripts]
+tatha = tatha_realtime:main
+tatha-ai = tatha_active_inference:main
+tatha-all = tatha_all:main
+tatha-bench = tatha_benchmarks:main
+tatha-llm = llm_local:main
+tatha-master = tatha_master:main

@@ -17,6 +17,8 @@ import sys
 import json
 import logging
 import warnings
+import statistics
+import time
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
@@ -384,3 +386,46 @@ class BenchmarkSuite:
     def measure_generalization(env, test_envs: list) -> float:
         """Measure performance on unseen environments."""
         return 0.0
+
+
+# --- New benchmark types from tatha_all.py ---
+
+@dataclass
+class EpisodeResult:
+    steps: int
+    success: bool
+    total_efe: float
+    wall_time: float
+
+
+@dataclass
+class BenchmarkReport:
+    agent_name: str
+    episodes: list[EpisodeResult] = field(default_factory=list)
+
+    @property
+    def success_rate(self) -> float:
+        return sum(e.success for e in self.episodes) / max(len(self.episodes), 1)
+
+    @property
+    def mean_steps(self) -> float:
+        succ = [e.steps for e in self.episodes if e.success]
+        return statistics.mean(succ) if succ else float("nan")
+
+    @property
+    def mean_efe(self) -> float:
+        return statistics.mean(e.total_efe for e in self.episodes)
+
+    @property
+    def mean_time(self) -> float:
+        return statistics.mean(e.wall_time for e in self.episodes)
+
+    def summary(self) -> dict[str, float]:
+        return {
+            "agent": self.agent_name,
+            "episodes": len(self.episodes),
+            "success_rate": self.success_rate,
+            "mean_steps": self.mean_steps,
+            "mean_efe": self.mean_efe,
+            "mean_time_s": self.mean_time,
+        }

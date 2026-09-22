@@ -12,19 +12,41 @@ dependencies = [
     "uvicorn[standard]>=0.24.0",
     "pyyaml>=6.0",
     "pydantic>=2.0.0",
+    "torch>=2.0.0",
     "anthropic>=0.30.0",
     "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
+    "gymnasium>=0.29.0",
 ]
 
 [project.optional-dependencies]
 gpu = ["cupy-cuda12x>=12.0.0"]
 web = ["matplotlib", "aiohttp>=3.9.0"]
-benchmarks = ["tqdm>=4.65.0", "prometheus-client>=0.19.0"]
+benchmarks = ["tqdm>=4.65.0", "prometheus-client>=0.19.0", "pymdp", "jax"]
 dev = ["pytest>=7.0", "anthropic>=0.30.0", "python-dotenv>=1.0.0"]
+quantum = ["torch>=2.0.0", "numpy>=1.24.0"]
+local-llm = ["ollama>=0.3.0", "llama-cpp-python>=0.2.23"]
 
 [project.scripts]
 tatha = "tatha_realtime:main"
 tatha-bench = "tatha_benchmarks:main"
+tatha-all = "tatha_all:main"
+tatha-ai = "tatha_active_inference:main"
+tatha-llm = "llm_local:main"
+tatha-master = "tatha_master:main"
+
+[tool.setuptools]
+py-modules = [
+    "tatha_master", "tatha_all", "tatha_active_inference",
+    "tatha_realtime", "tatha_benchmarks", "tatha_web",
+    "tatha_attention", "tatha_utils", "tatha_ppo", "tatha_replay",
+    "tatha_fixed", "tatha_rest", "agent", "llm_local",
+    "density_swarm", "path_integral", "precision_hyper", "qepso",
+    "active_inference", "active_visualization", "active_gym",
+    "quantum_realm", "quantum_swarm", "adversarial_swarm",
+    "meta_director", "multiverse_era", "gridworld_pc",
+    "unified_pc_space", "checkpoint", "observation_validator",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -32,4 +54,4 @@ python_files = ["test_*.py"]
 
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
