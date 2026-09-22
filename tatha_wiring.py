@@ -26,13 +26,13 @@ class ComponentSpec:
 WIRING_MANIFEST: list[ComponentSpec] = [
     ComponentSpec("PathIntegralPlanner", "path_integral", "PathIntegralPlanner", "class", "quantum", ("numpy",), kwargs_variants=({"grid_size": 8, "n_slices": 4}, {"grid_size": 8}, {}), notes="Trotter-Suzuki propagator"),
     ComponentSpec("PrecisionHyperModel", "precision_hyper", "PrecisionHyperModel", "class", "quantum", ("numpy", "torch"), kwargs_variants=({"state_dim": 16, "n_channels": 4}, {}), notes="Adaptive per-channel precision"),
-    ComponentSpec("QEPSOSwarm", "qepso", "QEPSOSwarm", "class", "quantum", ("numpy",), kwargs_variants=(), notes="Quantum-entangled PSO"),
+    ComponentSpec("QEPSOSwarm", "qepso", "QEPSOSwarm", "class", "quantum", ("numpy",), kwargs_variants=(), notes="Quantum-entangled PSO (needs bounds + objective)"),
     ComponentSpec("DensityMatrixSwarm", "density_swarm", "DensityMatrixSwarm", "class", "quantum", ("numpy",), kwargs_variants=({"hilbert_dim": 8}, {}), notes="Lindblad evolution"),
     ComponentSpec("QuantumSwarm", "quantum_swarm", "QuantumSwarm", "class", "swarm", ("numpy",), kwargs_variants=({},), notes="Multi-agent quantum swarm"),
     ComponentSpec("AdversarialSwarm", "adversarial_swarm", "AdversarialSwarmRealm", "class", "swarm", ("numpy",), kwargs_variants=({},), notes="RED vs BLUE swarm game"),
-    ComponentSpec("QuantumRealm", "quantum_realm", "QuantumRealmGridWorld", "class", "env", ("numpy",), kwargs_variants=({"size": 4}, {}), notes="Quantum grid world environment"),
     ComponentSpec("GridWorld", "gridworld_pc", "GridWorld", "class", "env", ("numpy",), kwargs_variants=({"size": 4}, {"n": 4}, {}), notes="Grid world"),
     ComponentSpec("SpaceGridWorld", "gridworld_pc", "SpaceGridWorld", "class", "env", ("numpy",), kwargs_variants=({"size": 4}, {}), notes="Spatial grid world"),
+    ComponentSpec("quantum_realm", "quantum_realm", None, "module", "env", ("numpy",), kwargs_variants=(), notes="Quantum grid world environment (module)"),
     ComponentSpec("GenerativeModel", "active_inference", "GenerativeModel", "class", "ai", ("numpy",), kwargs_variants=(), notes="A/B/C/D/E discrete POMDP"),
     ComponentSpec("run_fpi", "active_inference", "run_fpi", "function", "ai", ("numpy",), notes="Fixed-point variational inference"),
     ComponentSpec("compute_efe", "active_inference", "compute_efe", "function", "ai", ("numpy",), notes="Expected free energy"),
@@ -64,6 +64,13 @@ def _missing_deps(spec: ComponentSpec) -> list:
     return [r for r in spec.requires if not _has_module(r)]
 
 
+class _Failed:
+    def __init__(self, exc: Exception):
+        self.exc = exc
+    def __repr__(self):
+        return f"<_Failed: {type(self.exc).__name__}: {self.exc}>"
+
+
 def _try_call(fn: Callable, kwargs_variants: tuple, fallback: Any = None) -> Any:
     last_exc: Optional[Exception] = None
     for kwargs in kwargs_variants:
@@ -81,16 +88,9 @@ def _try_call(fn: Callable, kwargs_variants: tuple, fallback: Any = None) -> Any
     return fallback
 
 
-class _Failed:
-    def __init__(self, exc: Exception):
-        self.exc = exc
-    def __repr__(self):
-        return f"<_Failed: {type(self.exc).__name__}: {self.exc}>"
-
-
 @dataclass
 class Resolution:
-    spec: ComponentSpec
+    spec: Optional[ComponentSpec]
     obj: Any = None
     error: Optional[str] = None
     @property
@@ -147,6 +147,21 @@ class WiringRegistry:
             self._instances[name] = obj
         return obj
 
+    def module_attr(self, module_name: str, attr: str) -> Any:
+        res = self.resolve(module_name)
+        if not res.ok:
+            return None
+        mod = res.obj
+        if not hasattr(mod, attr):
+            return None
+        return getattr(mod, attr)
+
+    def module_attrs(self, module_name: str) -> list:
+        res = self.resolve(module_name)
+        if not res.ok:
+            return []
+        return [a for a in dir(res.obj) if not a.startswith("_")]
+
     def available(self) -> list:
         return [s.name for s in self.manifest if self.resolve(s.name).ok]
 
@@ -168,7 +183,7 @@ class WiringRegistry:
         return {"total": total, "available": ok, "missing": total - ok, "percent": 100.0 * ok / max(total, 1), "by_category": by_cat}
 
 
-# Backward-compatible aliases for existing tests
+# Backward-compatible aliases
 ComponentRegistry = WiringRegistry
 
 
@@ -238,25 +253,28 @@ class TathaStack:
         return {"n_available": len(self.components), "n_total": len(self.reg.manifest), "available": sorted(self.components.keys())}
 
 
-# Backward-compatible aliases
-
-
 # ============================================================================
 # SMOKE TESTING
 # ============================================================================
 
-def _smoke_instance(name: str, obj: Any) -> tuple[bool, str]:
+def _smoke_instance(name: str, obj: Any) -> tuple:
     try:
         if name == "PathIntegralPlanner":
             psi = np.zeros((8, 8), dtype=complex); psi[0, 0] = 1.0
             V = np.zeros((8, 8))
-            out = obj.propagate(psi, V, n_slices=2)
+            prop = getattr(obj, "propagate", None)
+            if prop is None:
+                return False, "no propagate method"
+            out = prop(psi, V, n_slices=2)
             return True, f"shape={np.asarray(out).shape}"
         if name == "DensityMatrixSwarm":
             obj.evolve(3)
             return True, f"coherence={obj.coherence():.4f}"
         if name == "QEPSOSwarm":
             return True, "class resolved"
+        if name == "quantum_realm":
+            attrs = [a for a in dir(obj) if not a.startswith("_")]
+            return True, f"module loaded, {len(attrs)} public names"
         if name == "GenerativeModel":
             A = [np.eye(4) * 0.9 + 0.1 / 4]
             B = [np.stack([np.eye(4)] * 2, axis=2)]
@@ -300,8 +318,6 @@ def _smoke_instance(name: str, obj: Any) -> tuple[bool, str]:
             return True, f"passed={r.passed}"
         if name == "active_visualization":
             return True, "module imported"
-        if name == "QuantumRealm":
-            return True, "module imported"
         return True, "resolved"
     except Exception as exc:
         return False, f"{type(exc).__name__}: {exc}"
@@ -313,23 +329,25 @@ def _smoke_instance(name: str, obj: Any) -> tuple[bool, str]:
 
 def probe(verbose: bool = True, registry: Optional[WiringRegistry] = None) -> dict:
     reg = registry or WiringRegistry()
-    _by_cat = {}
+    _by_cat: dict[str, list] = {}
     for s in reg.manifest:
-        _by_cat.setdefault(s.category, [])
-        if reg.resolve(s.name).ok:
-            _by_cat[s.category].append(s.name)
-    report = {"available": reg.available(), "unavailable": reg.unavailable(), "by_category": _by_cat,
-            "coverage": reg.coverage()}
+        _by_cat.setdefault(s.category, []).append(s.name)
+    report = {
+        "available": reg.available(),
+        "unavailable": reg.unavailable(),
+        "by_category": _by_cat,
+        "coverage": reg.coverage(),
+    }
     if verbose:
         print("=" * 72)
         print("TATHA WIRING PROBE")
         print("=" * 72)
-        by_cat: dict[str, list] = {}
+        by_cat_list: dict[str, list] = {}
         for s in reg.manifest:
-            by_cat.setdefault(s.category, []).append(s)
-        for cat in sorted(by_cat):
+            by_cat_list.setdefault(s.category, []).append(s)
+        for cat in sorted(by_cat_list):
             print(f"\n[{cat.upper()}]")
-            for s in by_cat[cat]:
+            for s in by_cat_list[cat]:
                 res = reg.resolve(s.name)
                 status = "OK  " if res.ok else "FAIL"
                 detail = s.notes if res.ok else res.error
@@ -392,10 +410,19 @@ def attach_to_runtime(runtime: Any, registry: Optional[WiringRegistry] = None, s
             if strict:
                 raise
             continue
-    try:
-        setattr(runtime, "_wired_components", attached)
-    except Exception:
-        pass
+        for hook_name in ("register", "add_component"):
+            hook = getattr(runtime, hook_name, None)
+            if callable(hook):
+                try:
+                    hook(spec.name, obj)
+                except TypeError:
+                    try:
+                        hook(obj)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+    setattr(runtime, "_wired_components", attached)
     return attached
 
 
@@ -410,17 +437,45 @@ wire = attach_to_runtime
 def run_quantum(grid: int = 8) -> dict:
     reg = WiringRegistry()
     out = {}
-    planner_cls = reg.instantiate("PathIntegralPlanner", grid_size=grid, n_slices=4)
-    if planner_cls is not None:
+    planner = reg.instantiate("PathIntegralPlanner", grid_size=grid, n_slices=4)
+    if planner is not None:
         psi = np.zeros((grid, grid), dtype=complex); psi[0, 0] = 1.0
         V = np.zeros((grid, grid)); V[grid // 2, grid // 2] = -5.0
-        psi_out = planner_cls.propagate(psi, V)
+        psi_out = planner.propagate(psi, V)
         out["path_integral"] = float(np.sum(np.abs(psi_out) ** 2))
     dm = reg.instantiate("DensityMatrixSwarm", hilbert_dim=8)
     if dm is not None:
         dm.evolve(20)
         out["density_pop_sum"] = float(dm.populations().sum())
         out["density_coherence"] = float(dm.coherence())
+    return out
+
+
+def run_quantum_realm(grid: int = 8) -> dict:
+    reg = WiringRegistry()
+    res = reg.resolve("quantum_realm")
+    if not res.ok:
+        return {"skipped": res.error}
+    mod = res.obj
+    public = [a for a in dir(mod) if not a.startswith("_")]
+    out: dict = {"public_names": public}
+    for cls_name in ("QuantumRealm", "Realm", "QuantumGridWorld"):
+        cls = getattr(mod, cls_name, None)
+        if cls is None or not isinstance(cls, type):
+            continue
+        try:
+            for kwargs in ({"size": grid}, {"n": grid}, {"grid_size": grid}, {}):
+                try:
+                    inst = cls(**kwargs)
+                    out["instantiated"] = cls_name
+                    out["instance_attrs"] = [a for a in dir(inst) if not a.startswith("_")][:20]
+                    break
+                except (TypeError, ValueError):
+                    continue
+            if "instantiated" in out:
+                break
+        except Exception as exc:
+            out[f"{cls_name}_error"] = f"{type(exc).__name__}: {exc}"
     return out
 
 
@@ -437,12 +492,13 @@ def run_active_inference(steps: int = 5) -> dict:
     rng = np.random.default_rng(0)
     qs_prev = None
     actions = []
+    res = None
     for _ in range(steps):
         res = run_fpi(model, obs=[0], qs_prev=qs_prev, num_iter=16)
         policy, _, _ = select_action(model, res.qs, [(a,) for a in range(4)], rng=rng)
         actions.append(policy[0])
         qs_prev = res.qs
-    return {"actions": actions, "final_F": res.free_energy}
+    return {"actions": actions, "final_F": res.free_energy if res is not None else None}
 
 
 def run_infra() -> dict:
@@ -471,7 +527,7 @@ def cmd_list(category: Optional[str] = None):
         status = "OK  " if res.ok else "FAIL"
         print(f"{status} [{spec.category:<7}] {spec.name:<24} {res.error or spec.notes}")
 
-def cmd_run(name: str):
+def cmd_run(name: str) -> int:
     reg = WiringRegistry()
     res = reg.resolve(name)
     if not res.ok:
@@ -501,6 +557,9 @@ def cmd_categories():
         print(f"{cat}: {len(reg.by_category(cat))} available")
 
 def cmd_quantum(): print(run_quantum())
+def cmd_quantum_realm():
+    import json
+    print(json.dumps(run_quantum_realm(), indent=2, default=str))
 def cmd_ai(): print(run_active_inference())
 def cmd_infra(): print(run_infra())
 
@@ -510,9 +569,10 @@ def cmd_attach():
     print("try:")
     print("    from tatha_wiring import WiringRegistry, attach_to_runtime")
     print("    _WIRING = WiringRegistry()")
-    print("    attach_to_runtime(globals())")
+    print("    _ATTACHED = attach_to_runtime(globals())")
     print("except ImportError:")
     print("    _WIRING = None")
+    print("    _ATTACHED = []")
 
 def main(argv: Optional[list] = None) -> int:
     argv = argv or sys.argv
@@ -529,6 +589,7 @@ def main(argv: Optional[list] = None) -> int:
     elif mode == "coverage": cmd_coverage()
     elif mode == "categories": cmd_categories()
     elif mode == "quantum": cmd_quantum()
+    elif mode == "realm": cmd_quantum_realm()
     elif mode == "ai": cmd_ai()
     elif mode == "infra": cmd_infra()
     elif mode == "attach": cmd_attach()
