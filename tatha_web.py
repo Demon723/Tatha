@@ -24,6 +24,14 @@ try:
 except ImportError:
     WEB_VIZ = False
 
+try:
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    import uvicorn
+    REST_AVAILABLE = True
+except ImportError:
+    REST_AVAILABLE = False
+
 
 class TathaDashboard:
     """Web dashboard for agent monitoring."""
@@ -32,6 +40,7 @@ class TathaDashboard:
         self.port = port
         self._plots_generated = False
         self._html_path = None
+        self._app = None
 
     def generate_dashboard(self, world, save_path: str = "dashboard.html"):
         """Generate self-contained HTML dashboard."""
@@ -143,7 +152,38 @@ class TathaDashboard:
         print(f"Dashboard saved to {html_path}")
         return html_path
 
-    def start_server(self, world, agent):
-        """Start HTTP server for dashboard (placeholder)."""
-        print(f"[WEB] Dashboard available at http://localhost:{self.port}")
-        print(f"[WEB] Generate dashboard: dashboard.generate_dashboard(world, 'dashboard.html')")
+    def _build_app(self):
+        """Build FastAPI app for dashboard."""
+        self.app = FastAPI(title="Tatha Dashboard", version="1.0.0")
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+        @self.app.get("/")
+        def index():
+            return {"status": "ok", "service": "tatha-dashboard"}
+
+        @self.app.get("/diagnostics")
+        def diagnostics():
+            if self.agent:
+                return {"status": "ok", **self.agent.get_diagnostics()}
+            return {"status": "ok", "agent": None}
+
+    def start_server(self, world=None, agent=None, port: int = None):
+        """Start HTTP server for dashboard."""
+        if not REST_AVAILABLE:
+            print("ERROR: fastapi not installed. Run: pip install fastapi uvicorn")
+            return
+
+        if agent is not None:
+            self.agent = agent
+        if port is not None:
+            self.port = port
+
+        self._build_app()
+
+        print(f"[WEB] Dashboard starting on http://0.0.0.0:{self.port}")
+        uvicorn.run(self.app, host="0.0.0.0", port=self.port, log_level="info")

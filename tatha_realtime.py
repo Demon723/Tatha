@@ -77,27 +77,34 @@ class TathaConfig:
     """Runtime configuration with defaults and env-var overrides."""
 
     DEFAULTS = {
-        'grid_size': 10,
-        'max_branches': 8,
-        'hidden_size': 32,
-        'belief_size': 8,
-        'learning_rate': 0.005,
-        'exploration_coef': 0.2,
-        'decoherence_rate': 0.01,
-        'dt': 0.1,
-        'settle_iters': 10,
-        'replay_capacity': 10000,
-        'batch_size': 32,
-        'checkpoint_dir': './checkpoints',
-        'ws_host': '0.0.0.0',
-        'ws_port': 8765,
+        'GRID_SIZE': 10,
+        'MAX_BRANCHES': 8,
+        'HIDDEN_SIZE': 32,
+        'BELIEF_SIZE': 8,
+        'LEARNING_RATE': 0.005,
+        'EXPLORATION_COEF': 0.2,
+        'DECOHERENCE_RATE': 0.01,
+        'DT': 0.1,
+        'SETTLE_ITERS': 10,
+        'REPLAY_CAPACITY': 10000,
+        'BATCH_SIZE': 32,
+        'CHECKPOINT_DIR': './checkpoints',
+        'WS_HOST': '0.0.0.0',
+        'WS_PORT': 8765,
+        'REST_PORT': 8766,
+        'USE_GPU': False,
+        'ATTENTION_ENABLED': False,
+        'CURRICULUM': False,
+        'PRIORITIZED_REPLAY': False,
+        'REWARD_SHAPING': False,
+        'NEUROSCIENCE_METRICS': False,
     }
 
     def __init__(self, **overrides):
         self._vals = dict(self.DEFAULTS)
         # Env var overrides
         for key in self._vals:
-            env = f'TATHA_{key.upper()}'
+            env = f'TATHA_{key}'
             if env in os.environ:
                 try:
                     self._vals[key] = type(self._vals[key])(os.environ[env])
@@ -112,6 +119,61 @@ class TathaConfig:
 
     def to_dict(self):
         return dict(self._vals)
+
+    @classmethod
+    def from_env(cls):
+        config = cls()
+        env_map = {
+            "TATHA_GRID_SIZE": "GRID_SIZE",
+            "TATHA_MAX_BRANCHES": "MAX_BRANCHES",
+            "TATHA_HIDDEN_SIZE": "HIDDEN_SIZE",
+            "TATHA_BELIEF_SIZE": "BELIEF_SIZE",
+            "TATHA_LEARNING_RATE": "LEARNING_RATE",
+            "TATHA_EXPLORATION_COEF": "EXPLORATION_COEF",
+            "TATHA_DECOHERENCE_RATE": "DECOHERENCE_RATE",
+            "TATHA_DT": "DT",
+            "TATHA_REPLAY_CAPACITY": "REPLAY_CAPACITY",
+            "TATHA_BATCH_SIZE": "BATCH_SIZE",
+            "TATHA_REST_PORT": "REST_PORT",
+            "TATHA_USE_GPU": "USE_GPU",
+            "TATHA_ATTENTION_ENABLED": "ATTENTION_ENABLED",
+            "TATHA_CURRICULUM": "CURRICULUM",
+            "TATHA_PRIORITIZED_REPLAY": "PRIORITIZED_REPLAY",
+            "TATHA_REWARD_SHAPING": "REWARD_SHAPING",
+            "TATHA_NEUROSCIENCE_METRICS": "NEUROSCIENCE_METRICS",
+        }
+        for env_key, attr in env_map.items():
+            val = os.environ.get(env_key)
+            if val is not None:
+                try:
+                    if attr in ("USE_GPU", "PRIORITIZED_REPLAY", "CURRICULUM",
+                                "ATTENTION_ENABLED", "REWARD_SHAPING",
+                                "NEUROSCIENCE_METRICS"):
+                        setattr(config, attr, val.lower() in ("true", "1", "yes"))
+                    elif attr in ("GRID_SIZE", "MAX_BRANCHES", "HIDDEN_SIZE",
+                                  "BELIEF_SIZE", "SETTLE_ITERS", "REPLAY_CAPACITY",
+                                  "BATCH_SIZE", "REST_PORT"):
+                        setattr(config, attr, int(val))
+                    elif attr in ("LEARNING_RATE", "EXPLORATION_COEF",
+                                  "DECOHERENCE_RATE", "DT"):
+                        setattr(config, attr, float(val))
+                except (ValueError, TypeError):
+                    pass
+        return config
+
+    @classmethod
+    def from_yaml(cls, path: str):
+        try:
+            import yaml
+            with open(path) as f:
+                data = yaml.safe_load(f) or {}
+            config = cls()
+            for key, val in data.items():
+                if hasattr(config, key):
+                    setattr(config, key, val)
+            return config
+        except ImportError:
+            return cls.from_env()
 
 
 # ==============================================================================
@@ -576,8 +638,7 @@ class TathaRealTime:
         if not batch:
             return
 
-        for experience in batch:
-            obs, action, reward, next_obs, done = experience
+        for obs, action, reward, next_obs, done in batch:
             self.perceptual.perceive(obs)
             self.perceptual.settle(n_iter=3)
             self.perceptual.learn()
@@ -586,24 +647,6 @@ class TathaRealTime:
         if self.config.PRIORITIZED_REPLAY and hasattr(self.replay, 'update_priorities'):
             td_errors = np.array([r + 0.5 for _, _, r, _, _ in batch])
             self.replay.update_priorities(np.arange(len(batch)), td_errors)
-
-    def learn_from_replay(self, batch_size: int = None):
-        """Sample from replay buffer and update perceptual agent."""
-        batch_size = batch_size or self.config.BATCH_SIZE
-        batch = self.replay.sample(batch_size)
-        if not batch:
-            return
-
-        for obs, action, reward, next_obs, done in batch:
-            # Construct prediction target
-            target = next_obs.copy()
-            if done:
-                target *= 0.5  # decay on episode end
-
-            # Teach perceptual agent
-            self.perceptual.perceive(obs)
-            self.perceptual.settle(n_iter=3)
-            self.perceptual.learn()
 
     def checkpoint_save(self, name: str = None) -> str:
         """Save full agent state."""
@@ -933,7 +976,7 @@ class TathaREPL:
 # PART R9: Entry point
 # ==============================================================================
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="Tatha Real-Time Agent Server")
     parser.add_argument('--repl', action='store_true', help='Interactive REPL mode')
     parser.add_argument('--host', default='0.0.0.0', help='WebSocket host')
@@ -953,13 +996,11 @@ if __name__ == "__main__":
     parser.add_argument('--rest', action='store_true', help='Start REST API server')
     args = parser.parse_args()
 
-    # Load config from YAML if provided
     if args.config:
         config = TathaConfig.from_yaml(args.config)
     else:
         config = TathaConfig.from_env()
 
-    # CLI overrides
     config.GRID_SIZE = args.grid
     config.USE_GPU = args.gpu
     config.ATTENTION_ENABLED = args.attention
@@ -988,3 +1029,7 @@ if __name__ == "__main__":
     else:
         server = TathaWSServer(agent, host=args.host, port=args.port)
         server.start()
+
+
+if __name__ == "__main__":
+    main()

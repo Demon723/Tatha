@@ -70,9 +70,9 @@ class MultiHeadAttention:
 
         # Reshape into heads: (num_heads, seq_len, head_dim)
         H = self.config.num_heads
-        Q = Q.reshape(H, seq_len, self.head_dim).transpose(1, 0, 2)
-        K = K.reshape(H, seq_len, self.head_dim).transpose(1, 0, 2)
-        V = V.reshape(H, seq_len, self.head_dim).transpose(1, 0, 2)
+        Q = Q.reshape(seq_len, H, self.head_dim).transpose(1, 0, 2)
+        K = K.reshape(seq_len, H, self.head_dim).transpose(1, 0, 2)
+        V = V.reshape(seq_len, H, self.head_dim).transpose(1, 0, 2)
 
         # Attention per head
         outputs = []

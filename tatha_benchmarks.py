@@ -12,6 +12,7 @@ Provides:
   - Throughput and latency tests
 """
 from __future__ import annotations
+import argparse
 import time
 import numpy as np
 from dataclasses import dataclass
@@ -242,3 +243,26 @@ class BenchmarkSuite:
         for r in self.results:
             print(f"  {r}")
         print("=" * 60)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Tatha Benchmarks")
+    parser.add_argument('--output', type=str, default="./benchmarks", help='Output directory')
+    parser.add_argument('--steps', type=int, default=200, help='Max steps per benchmark')
+    args = parser.parse_args()
+
+    suite = BenchmarkSuite(output_dir=args.output)
+
+    from gridworld_pc import GridWorld
+    from unified_pc_space import Tatha
+
+    grid_env = GridWorld(size=5)
+    grid_agent = Tatha(input_size=25, hidden_size=16, belief_size=4, lr=0.005)
+
+    suite.benchmark_grid_navigation(grid_env, grid_agent, max_steps=args.steps)
+    suite.print_report()
+    suite.save_results()
+
+
+if __name__ == "__main__":
+    main()
