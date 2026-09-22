@@ -4,11 +4,13 @@ active_inference.py
 active_visualization.py
 adversarial_swarm.py
 agent.py
+checkpoint.py
 density_swarm.py
 gridworld_pc.py
 llm_local.py
 meta_director.py
 multiverse_era.py
+observation_validator.py
 path_integral.py
 precision_hyper.py
 pyproject.toml
@@ -27,6 +29,7 @@ tatha_replay.py
 tatha_rest.py
 tatha_utils.py
 tatha_web.py
+tatha_wiring.py
 unified_pc_space.py
 tatha.egg-info/PKG-INFO
 tatha.egg-info/SOURCES.txt
@@ -35,3 +38,4 @@ tatha.egg-info/entry_points.txt
 tatha.egg-info/requires.txt
 tatha.egg-info/top_level.txt
 tests/test_core.py
+tests/test_wiring.py

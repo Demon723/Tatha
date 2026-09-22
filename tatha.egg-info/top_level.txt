@@ -27,4 +27,5 @@ tatha_replay
 tatha_rest
 tatha_utils
 tatha_web
+tatha_wiring
 unified_pc_space

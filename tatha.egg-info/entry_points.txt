@@ -5,3 +5,4 @@ tatha-all = tatha_all:main
 tatha-bench = tatha_benchmarks:main
 tatha-llm = llm_local:main
 tatha-master = tatha_master:main
+tatha-wiring = tatha_wiring:main

@@ -34,6 +34,7 @@ tatha-all = "tatha_all:main"
 tatha-ai = "tatha_active_inference:main"
 tatha-llm = "llm_local:main"
 tatha-master = "tatha_master:main"
+tatha-wiring = "tatha_wiring:main"
 
 [tool.setuptools]
 py-modules = [
@@ -46,6 +47,7 @@ py-modules = [
     "quantum_realm", "quantum_swarm", "adversarial_swarm",
     "meta_director", "multiverse_era", "gridworld_pc",
     "unified_pc_space", "checkpoint", "observation_validator",
+    "tatha_wiring",
 ]
 
 [tool.pytest.ini_options]
