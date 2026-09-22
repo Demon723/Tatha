@@ -29,7 +29,8 @@ WIRING_MANIFEST: list[ComponentSpec] = [
     ComponentSpec("QEPSOSwarm", "qepso", "QEPSOSwarm", "class", "quantum", ("numpy",), kwargs_variants=(), notes="Quantum-entangled PSO"),
     ComponentSpec("DensityMatrixSwarm", "density_swarm", "DensityMatrixSwarm", "class", "quantum", ("numpy",), kwargs_variants=({"hilbert_dim": 8}, {}), notes="Lindblad evolution"),
     ComponentSpec("QuantumSwarm", "quantum_swarm", "QuantumSwarm", "class", "swarm", ("numpy",), kwargs_variants=({},), notes="Multi-agent quantum swarm"),
-    ComponentSpec("AdversarialSwarm", "adversarial_swarm", "AdversarialSwarm", "class", "swarm", ("numpy",), kwargs_variants=({},), notes="RED vs BLUE swarm game"),
+    ComponentSpec("AdversarialSwarm", "adversarial_swarm", "AdversarialSwarmRealm", "class", "swarm", ("numpy",), kwargs_variants=({},), notes="RED vs BLUE swarm game"),
+    ComponentSpec("QuantumRealm", "quantum_realm", "QuantumRealmGridWorld", "class", "env", ("numpy",), kwargs_variants=({"size": 4}, {}), notes="Quantum grid world environment"),
     ComponentSpec("GridWorld", "gridworld_pc", "GridWorld", "class", "env", ("numpy",), kwargs_variants=({"size": 4}, {"n": 4}, {}), notes="Grid world"),
     ComponentSpec("SpaceGridWorld", "gridworld_pc", "SpaceGridWorld", "class", "env", ("numpy",), kwargs_variants=({"size": 4}, {}), notes="Spatial grid world"),
     ComponentSpec("GenerativeModel", "active_inference", "GenerativeModel", "class", "ai", ("numpy",), kwargs_variants=(), notes="A/B/C/D/E discrete POMDP"),
@@ -298,6 +299,8 @@ def _smoke_instance(name: str, obj: Any) -> tuple[bool, str]:
             r = obj(np.array([1]), grid_spec(4))
             return True, f"passed={r.passed}"
         if name == "active_visualization":
+            return True, "module imported"
+        if name == "QuantumRealm":
             return True, "module imported"
         return True, "resolved"
     except Exception as exc:
